@@ -652,6 +652,264 @@ impl<'a> TryFrom<&'a [u8]> for DeliverPdu {
 
     }
 }
+
+/// SMS delivery status codes for STATUS-REPORT PDUs.
+#[repr(u8)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, FromPrimitive)]
+pub enum MessageStatus {
+    // Short message transaction completed
+    /// Short message received by the SME
+    ReceivedBySme = 0x00,
+    /// Short message forwarded by the SC to the SME but the SC is unable to confirm delivery
+    ForwardedUnconfirmed = 0x01,
+    /// Short message replaced by the SC
+    ReplacedBySc = 0x02,
+
+    // Temporary error, SC still trying to transfer SM
+    /// Congestion
+    Congestion = 0x20,
+    /// SME busy
+    SmeBusy = 0x21,
+    /// No response from SME
+    NoResponseFromSme = 0x22,
+    /// Service rejected
+    ServiceRejected = 0x23,
+    /// Quality of service not available
+    QualityNotAvailable = 0x24,
+    /// Error in SME
+    ErrorInSme = 0x25,
+
+    // Permanent error, SC is not making any more transfer attempts
+    /// Remote procedure error
+    RemoteProcedureError = 0x40,
+    /// Incompatible destination
+    IncompatibleDestination = 0x41,
+    /// Connection rejected by SME
+    ConnectionRejected = 0x42,
+    /// Not obtainable
+    NotObtainable = 0x43,
+    /// Quality of service not available
+    QualityNotAvailablePermanent = 0x44,
+    /// No interworking available
+    NoInterworkingAvailable = 0x45,
+    /// SM Validity Period Expired
+    ValidityPeriodExpired = 0x46,
+    /// SM Deleted by originating SME
+    DeletedByOriginatingSme = 0x47,
+    /// SM Deleted by SC Administration
+    DeletedByScAdministration = 0x48,
+    /// SM does not exist (The SM may have previously existed in the SC but the SC no longer has knowledge of it)
+    SmDoesNotExist = 0x49,
+
+    // Temporary error, SC is not making any more transfer attempts
+    /// Congestion permanent
+    CongestionPermanent = 0x60,
+    /// SME busy permanent
+    SmeBusyPermanent = 0x61,
+    /// No response from SME permanent
+    NoResponseFromSmePermanent = 0x62,
+    /// Service rejected permanent
+    ServiceRejectedPermanent = 0x63,
+    /// Quality of service not available permanent
+    QualityNotAvailablePermanentDuplicate = 0x64,
+    /// Error in SME permanent
+    ErrorInSmePermanent = 0x65,
+}
+
+impl MessageStatus {
+    /// Returns true if this status indicates successful delivery
+    pub fn is_success(&self) -> bool {
+        matches!(self, MessageStatus::ReceivedBySme | MessageStatus::ForwardedUnconfirmed | MessageStatus::ReplacedBySc)
+    }
+
+    /// Returns true if this is a temporary error (SC still trying)
+    pub fn is_temporary_error(&self) -> bool {
+        let status_code = *self as u8;
+        (0x20..=0x3F).contains(&status_code)
+    }
+
+    /// Returns true if this is a permanent error (SC gave up)
+    pub fn is_permanent_error(&self) -> bool {
+        let status_code = *self as u8;
+        (0x40..=0x6F).contains(&status_code)
+    }
+}
+
+/// The first octet of a SMS-STATUS-REPORT PDU.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StatusReportPduFirstOctet {
+    /// Message type.
+    pub mti: MessageType,
+    /// More messages to send flag
+    pub mms: bool,
+    /// Loop prevention flag
+    pub lp: bool,
+    /// Status report qualifier (0 = result of SMS-SUBMIT, 1 = result of SMS-COMMAND)
+    pub srq: bool,
+    /// Does the user data segment contain a data header?
+    pub udhi: bool,
+}
+
+impl From<u8> for StatusReportPduFirstOctet {
+    fn from(b: u8) -> Self {
+        let mti = MessageType::from_u8(b & 0b00000011)
+            .expect("MessageType conversions should be exhaustive!");
+        let mms = (b & 0b00000100) > 0;
+        let lp = (b & 0b00001000) > 0;
+        let srq = (b & 0b00100000) > 0;
+        let udhi = (b & 0b01000000) > 0;
+
+        StatusReportPduFirstOctet { mti, mms, lp, srq, udhi }
+    }
+}
+
+/// An SMS-STATUS-REPORT PDU.
+///
+/// This PDU type is sent by the SMS Center to inform about the delivery status
+/// of a previously submitted message.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StatusReportPdu {
+    /// Service centre address, if provided here.
+    pub sca: Option<PduAddress>,
+    /// First octet (contains some extra fields).
+    pub first_octet: StatusReportPduFirstOctet,
+    /// Message reference (matches the reference from the original SMS-SUBMIT)
+    pub message_reference: u8,
+    /// Recipient address (destination of the original message)
+    pub recipient_address: PduAddress,
+    /// Service centre timestamp when the original message was received
+    pub scts: SmscTimestamp,
+    /// Discharge time - when the message was delivered or failed
+    pub discharge_time: SmscTimestamp,
+    /// Status of the message delivery attempt
+    pub status: MessageStatus,
+    /// Parameter indicating (optional) - only present if first_octet.udhi is true
+    pub parameter_indicating: Option<u8>,
+    /// User data (optional)
+    pub user_data: Vec<u8>,
+    /// User data length
+    pub user_data_len: u8
+}
+impl StatusReportPdu {
+    /// Get the actual data (i.e. text or binary content) of the optional user data.
+    ///
+    /// Methods on `GsmMessageData` let you convert this into actual text.
+    /// Returns None if there's no user data.
+    pub fn get_message_data(&self) -> Option<GsmMessageData> {
+        if self.user_data.is_empty() {
+            None
+        } else {
+            Some(GsmMessageData {
+                bytes: self.user_data.clone(),
+                user_data_len: self.user_data_len,
+                encoding: MessageEncoding::Gsm7Bit, // Default encoding for status reports
+                udh: self.first_octet.udhi
+            })
+        }
+    }
+}
+impl<'a> TryFrom<&'a [u8]> for StatusReportPdu {
+    type Error = PDUError;
+
+    fn try_from(b: &[u8]) -> PDUResult<Self> {
+        if b.is_empty() {
+            return Err(PDUError::InvalidPdu("zero-length input"));
+        }
+
+        let scalen = b[0];
+        let mut offset: usize = scalen as usize + 1;
+
+        // Parse SCA if present
+        let sca = if scalen > 0 {
+            let o = offset - 1;
+            check_offset!(b, o, "SCA");
+            Some(PduAddress::try_from(&b[0..offset])?)
+        } else {
+            None
+        };
+
+        // Parse first octet
+        check_offset!(b, offset, "first octet");
+        let first_octet = StatusReportPduFirstOctet::from(b[offset]);
+        offset += 1;
+
+        // Parse message reference
+        check_offset!(b, offset, "message reference");
+        let message_reference = b[offset];
+        offset += 1;
+
+        // Parse recipient address
+        check_offset!(b, offset, "recipient address len");
+        let recipient_len_nybbles = b[offset];
+        let recipient_len_octets = (recipient_len_nybbles / 2) + (recipient_len_nybbles % 2);
+        let recipient_offset = (recipient_len_octets as usize) + 2;
+        let recipient_end = offset + recipient_offset;
+        let re = recipient_end - 1;
+        check_offset!(b, re, "recipient address");
+        let recipient_address = PduAddress::try_from(&b[offset..recipient_end])?;
+        offset += recipient_offset;
+
+        // Parse service centre timestamp (7 bytes)
+        let scts_end = offset + 7;
+        let ss = offset + 6;
+        check_offset!(b, ss, "service center timestamp");
+        let scts = SmscTimestamp::try_from(&b[offset..scts_end])?;
+        offset += 7;
+
+        // Parse discharge time (7 bytes)
+        let discharge_end = offset + 7;
+        let ds = offset + 6;
+        check_offset!(b, ds, "discharge time");
+        let discharge_time = SmscTimestamp::try_from(&b[offset..discharge_end])?;
+        offset += 7;
+
+        // Parse status
+        check_offset!(b, offset, "status");
+        let status = MessageStatus::from_u8(b[offset])
+            .unwrap_or(MessageStatus::ErrorInSme); // Default to a reasonable error if unknown status
+        offset += 1;
+
+        // Parse optional parameter indicating (only if UDHI is set)
+        let parameter_indicating = if first_octet.udhi && offset < b.len() {
+            let pi = b[offset];
+            offset += 1;
+            Some(pi)
+        } else {
+            None
+        };
+
+        // Parse optional user data length and user data
+        let (user_data_len, user_data) = if offset < b.len() {
+            check_offset!(b, offset, "user data len");
+            let udl = b[offset];
+            offset += 1;
+
+            let ud = if offset < b.len() {
+                b[offset..].to_owned()
+            } else {
+                vec![]
+            };
+
+            (udl, ud)
+        } else {
+            (0, vec![])
+        };
+
+        Ok(StatusReportPdu {
+            sca,
+            first_octet,
+            message_reference,
+            recipient_address,
+            scts,
+            discharge_time,
+            status,
+            parameter_indicating,
+            user_data,
+            user_data_len,
+        })
+    }
+}
+
 /// An SMS-SUBMIT PDU.
 ///
 /// **NB:** For simple usage, ignore 99% of the stuff in this module and just use

@@ -7,7 +7,9 @@ This repository contains a subset of extracted code from:
 
 ## Why This Subset?
 
-This subset contains only the GSM PDU encoding / decoding for both `SMS-SUBMIT` and `SMS-DELIVER`.
+This subset contains only the GSM PDU encoding / decoding for `SMS-SUBMIT` and `SMS-DELIVER` as taken
+from the original repository whilst adding `SMS-STATUS-REPORT` decoding.
+
 The original repository is a full modem implementation and therefore comes packaged with many more
 dependencies which are unnecessary if you intend to only use it's PDU parser.
 
