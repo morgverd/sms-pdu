@@ -675,7 +675,7 @@ pub enum MessageStatus {
     /// Service rejected
     ServiceRejected = 0x23,
     /// Quality of service not available
-    QualityNotAvailable = 0x24,
+    QualityOfServiceNotAvailable = 0x24,
     /// Error in SME
     ErrorInSme = 0x25,
 
@@ -685,35 +685,35 @@ pub enum MessageStatus {
     /// Incompatible destination
     IncompatibleDestination = 0x41,
     /// Connection rejected by SME
-    ConnectionRejected = 0x42,
+    ConnectionRejectedBySme = 0x42,
     /// Not obtainable
     NotObtainable = 0x43,
     /// Quality of service not available
-    QualityNotAvailablePermanent = 0x44,
+    QualityOfServiceNotAvailablePermanent = 0x44,
     /// No interworking available
     NoInterworkingAvailable = 0x45,
     /// SM Validity Period Expired
-    ValidityPeriodExpired = 0x46,
+    SmValidityPeriodExpired = 0x46,
     /// SM Deleted by originating SME
-    DeletedByOriginatingSme = 0x47,
+    SmDeletedByOriginatingSme = 0x47,
     /// SM Deleted by SC Administration
-    DeletedByScAdministration = 0x48,
-    /// SM does not exist (The SM may have previously existed in the SC but the SC no longer has knowledge of it)
+    SmDeletedByScAdministration = 0x48,
+    /// SM does not exist
     SmDoesNotExist = 0x49,
 
     // Temporary error, SC is not making any more transfer attempts
-    /// Congestion permanent
-    CongestionPermanent = 0x60,
-    /// SME busy permanent
-    SmeBusyPermanent = 0x61,
-    /// No response from SME permanent
-    NoResponseFromSmePermanent = 0x62,
-    /// Service rejected permanent
-    ServiceRejectedPermanent = 0x63,
-    /// Quality of service not available permanent
-    QualityNotAvailablePermanentDuplicate = 0x64,
-    /// Error in SME permanent
-    ErrorInSmePermanent = 0x65,
+    /// Congestion
+    CongestionNoMoreAttempts = 0x60,
+    /// SME busy
+    SmeBusyNoMoreAttempts = 0x61,
+    /// No response from SME
+    NoResponseFromSmeNoMoreAttempts = 0x62,
+    /// Service rejected
+    ServiceRejectedNoMoreAttempts = 0x63,
+    /// Quality of service not available
+    QualityOfServiceNotAvailableNoMoreAttempts = 0x64,
+    /// Error in SME
+    ErrorInSmeNoMoreAttempts = 0x65,
 }
 
 impl MessageStatus {
@@ -728,7 +728,8 @@ impl MessageStatus {
         (0x20..=0x3F).contains(&status_code)
     }
 
-    /// Returns true if this is a permanent error (SC gave up)
+    /// Returns true if this is a permanent error (SC gave up).
+    /// More delivery reports will not be received for the message.
     pub fn is_permanent_error(&self) -> bool {
         let status_code = *self as u8;
         (0x40..=0x6F).contains(&status_code)
