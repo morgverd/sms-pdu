@@ -1,14 +1,17 @@
 [package]
-authors = ["eta <github@eta.st>", "morgverd <morgverd@gmail.com>"]
-name = "pdu-rs"
-version = "0.1.0"
+name = "sms-pdu"
+description = "Lightweight Rust SMS PDU parser - minimal dependencies subset from huawei-modem for GSM message encoding/decoding only."
+version = "1.0.0"
 edition = "2021"
 license = "CC0-1.0"
+keywords = ["sms", "gsm", "pdu"]
+categories = ["api-bindings", "encoding"]
+repository = "https://github.com/morgverd/sms-pdu"
 readme = "README.md"
+authors = ["eta <github@eta.st>", "morgverd <morgverd@gmail.com>"]
 
 [dependencies]
 encoding = "0.2.33"
-num = "0.4.3"
 num-derive = "0.4.2"
 num-traits = "0.2.19"
 rand = "0.9.1"
